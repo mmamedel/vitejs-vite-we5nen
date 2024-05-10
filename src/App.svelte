@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { Muxer, ArrayBufferTarget } from "mp4-muxer";
+  import { downloadBlob, findClosestNumber } from "./app";
   let videoEl: HTMLVideoElement;
   let isRecording = false;
   let encoder: VideoEncoder;
@@ -18,34 +19,52 @@
     (device) => device.kind === "videoinput"
   );
   let currentDevice: MediaDeviceInfo | null = null;
-  $: if (currentDevice) loadDevice(currentDevice);
+  let aspectRatio = 16 / 9;
+  screen.orientation.onchange = () => {
+    if (screen.width > screen.height) {
+      aspectRatio = 9 / 16;
+      return;
+    }
+    aspectRatio = 16 / 9;
+  };
+  $: if (currentDevice) {
+    loadDevice(currentDevice, aspectRatio);
+  }
 
-  async function loadDevice(device: MediaDeviceInfo) {
+  async function loadDevice(device: MediaDeviceInfo, aspectRatio: number) {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
         deviceId: device.deviceId,
+        aspectRatio,
       },
     });
     const track = stream.getVideoTracks()[0];
-    const trackCapabilities = track.getCapabilities();
+    const trackSettings = track.getSettings();
+    console.log(trackSettings);
     videoEl.srcObject = stream;
-    videoEl.onloadedmetadata = () => {
-      videoEl.play();
+    videoEl.onloadedmetadata = async () => {
       videoEl.onloadedmetadata = null;
-    };
-    const width = 640 || trackCapabilities.width?.max || videoEl.width;
-    const height = 480 || trackCapabilities.height?.max || videoEl.height;
+      videoEl.play();
+      const width = trackSettings.width as number;
+      const height = trackSettings.height as number;
+      const rotation = screen.orientation.angle;
 
-    await loadMuxerAndEncoder(width, height);
+      await loadMuxerAndEncoder(width, height, rotation);
+    };
   }
 
-  async function loadMuxerAndEncoder(width: number, height: number) {
+  async function loadMuxerAndEncoder(
+    width: number,
+    height: number,
+    rotation: number
+  ) {
     muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: {
         codec: "avc",
         width,
         height,
+        rotation: findClosestNumber(rotation, [0, 90, 180, 270] as const),
       },
       fastStart: "in-memory",
       firstTimestampBehavior: "offset",
@@ -64,10 +83,15 @@
       bitrate: 20_000_000,
     });
   }
+
   onMount(async () => {
+    await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true,
+    });
     devices = await navigator.mediaDevices.enumerateDevices();
-    console.log(devices);
-    // currentDevice = videoInputDevices[0];
+    await tick();
+    currentDevice = videoInputDevices[0];
   });
 
   function startRecording() {
@@ -111,22 +135,11 @@
     encoder.encode(frame, { keyFrame: needsKeyFrame });
     frame.close();
   }
-
-  function downloadBlob(blob: Blob, name: string) {
-    let url = window.URL.createObjectURL(blob);
-    let a = document.createElement("a");
-    a.style.display = "none";
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-  }
 </script>
 
-<select>
+<select bind:value={currentDevice}>
   {#each videoInputDevices as device}
-    <option>{device.label || device.deviceId}</option>
+    <option value={device}>{device.label || device.deviceId}</option>
   {/each}
 </select>
 {#if !isRecording}

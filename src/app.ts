@@ -8,3 +8,15 @@ export function downloadBlob(blob: Blob, name: string) {
   a.click();
   window.URL.revokeObjectURL(url);
 }
+
+export function findClosestNumber<T extends number>(
+  num: number,
+  list: readonly T[]
+) {
+  const diffs = list.map((listNum) => ({
+    listNum,
+    diff: Math.abs(listNum - num),
+  }));
+  const orderedDiffs = diffs.sort((a, b) => a.diff - b.diff);
+  return orderedDiffs[0].listNum;
+}

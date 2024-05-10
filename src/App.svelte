@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   let videoEl: HTMLVideoElement;
   let isRecording = false;
-  let encoder: VideoEncoder;
   let intervalId: number;
   let framesGenerated = 0;
   let allChunks: Uint8Array[] = [];
@@ -10,25 +9,7 @@
     const device = await navigator.mediaDevices.getUserMedia({
       video: true,
     });
-    const track = device.getVideoTracks()[0];
-    const trackCapabilities = track.getCapabilities();
     videoEl.srcObject = device;
-
-    encoder = new VideoEncoder({
-      async output(chunk, metadata) {
-        console.log({ chunk, metadata });
-      },
-      error(err) {
-        console.error(err);
-      },
-    });
-    encoder.configure({
-      codec: "avc1.4d0034",
-      width: trackCapabilities.width?.max || videoEl.width,
-      height: trackCapabilities.height?.max || videoEl.height,
-      hardwareAcceleration: "prefer-hardware",
-      bitrate: 20_000_000,
-    });
   });
 
   function startRecording() {

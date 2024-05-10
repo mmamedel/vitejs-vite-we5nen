@@ -10,17 +10,36 @@
   let allChunks: Uint8Array[] = [];
   let startTime: number;
   let lastKeyFrame = -Infinity;
-  onMount(async () => {
-    const device = await navigator.mediaDevices.getUserMedia({
-      video: true,
+  let devices: MediaDeviceInfo[] = [];
+  $: audioInputDevices = devices.filter(
+    (device) => device.kind === "audioinput"
+  );
+  $: videoInputDevices = devices.filter(
+    (device) => device.kind === "videoinput"
+  );
+  let currentDevice: MediaDeviceInfo | null = null;
+  $: if (currentDevice) loadDevice(currentDevice);
+
+  async function loadDevice(device: MediaDeviceInfo) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: device.deviceId,
+      },
     });
-    const track = device.getVideoTracks()[0];
+    const track = stream.getVideoTracks()[0];
     const trackCapabilities = track.getCapabilities();
-    videoEl.srcObject = device;
+    videoEl.srcObject = stream;
+    videoEl.onloadedmetadata = () => {
+      videoEl.play();
+      videoEl.onloadedmetadata = null;
+    };
+    const width = 640 || trackCapabilities.width?.max || videoEl.width;
+    const height = 480 || trackCapabilities.height?.max || videoEl.height;
 
-    const width = trackCapabilities.width?.max || videoEl.width;
-    const height = trackCapabilities.height?.max || videoEl.height;
+    await loadMuxerAndEncoder(width, height);
+  }
 
+  async function loadMuxerAndEncoder(width: number, height: number) {
     muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: {
@@ -44,6 +63,11 @@
       hardwareAcceleration: "prefer-hardware",
       bitrate: 20_000_000,
     });
+  }
+  onMount(async () => {
+    devices = await navigator.mediaDevices.enumerateDevices();
+    console.log(devices);
+    // currentDevice = videoInputDevices[0];
   });
 
   function startRecording() {
@@ -64,7 +88,7 @@
     const buffer = muxer.target.buffer;
     downloadBlob(new Blob([buffer]), "davinci.mp4");
 
-    downloadBlob(new Blob(allChunks), "davinci.yuv");
+    // downloadBlob(new Blob(allChunks), "davinci.yuv");
     allChunks = [];
   }
 
@@ -100,10 +124,16 @@
   }
 </script>
 
+<select>
+  {#each videoInputDevices as device}
+    <option>{device.label || device.deviceId}</option>
+  {/each}
+</select>
 {#if !isRecording}
   <button on:click={startRecording}>Start recording</button>
 {:else}
   <button on:click={endRecording}>End recording</button>
 {/if}
+<br />
 <!-- svelte-ignore a11y-media-has-caption -->
-<video bind:this={videoEl} autoplay></video>
+<video bind:this={videoEl} playsinline></video>
